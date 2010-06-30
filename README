@@ -3,8 +3,139 @@ NAME
 Net::OAuth::All - a wrapper round the OAuth protocol of all versions(1.0, 1.0A, 2.0).
 
 SYNOPSIS
+	
+	use Net::OAuth::All;
+	use HTTP::Request::Common;
+	
+	my $ua = LWP::UserAgent->new;
+	
+	my $www_oauth = Net::OAuth::All->new(
+		consumer_key      => 'gjnj3n8848hkdsdksknskjnu48',
+		consumer_secret   => 'gjnj3n8848hkdsdksknskjnu48ffgdsknfjkndngjbu43h',
+		signature_method  => 'HMAC-SHA1',
+		
+		request_token_url => 'https://provider.com/account/oauth/request_token',
+		authorization_url => 'https://provider.com/account/oauth/authorize',
+		access_token_url  => 'https://provider.com/account/oauth/access_token',
+		
+		protected_resource_url => 'http://provider-api.com/v2/feed/me',
+	);
+	
+	# Consumer Get request token of OAuth 1.0 or 1.0A
+	
+	my $res = $ua->request(GET $www_oauth->request('request_token')->to_url);
+	if ($res->is_success) {
+		$www_oauth->response->from_post_body($res->content);
+		
+		print "Got Request Token ", $www_oauth->token, "\n";
+		print "Got Request Token Secret ", $www_oauth->token_secret, "\n";
+	} else {
+		die "Something went wrong";
+	}
+	
+	# Consumer Get authorization URL for redirect to provider
+	
+	$www_oauth->request('authorization')->to_url
+	
+DESCRIPTION
+	At this moment module suppoted Consumer implementation of OAuth 1.0, 1.0A and 2.0 version.
+	
+	CONFIGURATION
+	
+		FOR ALL OAUTH VERSIONS
+		
+		- module_version
+			Is optional param. Is OAuth version, may be '1.0','1.0A' or '2.0'. Module has auto detection of this param according to service provider params.
+		
+		- signature_method
+			Is required param. Suppoted PLAINTEXT, HMAC-SHA1 and RSA-SHA1.
+		
+		- signature_key_file
+			Is required param for RSA-SHA1 signatures. Is path to *.pem file
+		
+		- callback
+			Is optional param. 
+		
+		- extra_params
+			Is optional param, but may be required by provider.
+			
+		- request_token_url
+			Is required param. URL for get request token
+			
+		- authorization_url
+			Is required param. URL for authorization on service provider
+			
+		- access_token_url
+			Is required param. URL for get access token
+			
+		- protected_resource_url
+			Is required param. URL for get user profile
+		
+		
+		FOR OAUTH 1.0 and 1.0A
+		
+			- consumer_key
+				Is required param. Is issued by provider
+			
+			- consumer_secret
+				Is required param. Is issued by provider
+			
+		
+		FOR OAUTH 2.0
+		
+			- type
+				Is required param. Is issued by provider. At this moment module has implementation of web_server type only.
+			
+			- client_id
+				Is required param. Is issued by provider
+			
+			- client_secret
+				Is required param. Is issued by provider
+			
+			- api_key
+				Is required param. Is issued by provider
+			
+			
+		PARAMS FROM PROVIDER
+			
+			You receives this params from service provider after request or on callback.
+			
+			- token
+				Is for OAUTH 1.0 and 1.0A
+			
+			- token_secret
+				Is for OAUTH 1.0 and 1.0A
+			
+			- verifier
+				Is param for OAUTH 1.0A. Needs for get access token
+			
+			- code
+				Is param for OAUTH 2.0. Needs for get access token
+			
+		
+	SIGNATURE METHODS
+	
+		The following signature methods are supported:
+		
+		- PLAINTEXT
+		- HMAC-SHA1
+		- RSA-SHA1
+	
+	RSA-SHA1 SIGNATURES
+		
+		To use RSA-SHA1 signatures, pass -signature_key_file param to configuration.
+	
+	REQUESTS
+		
+	RESPONSE
+	
+	METHOD
 
-
+SEE ALSO
+	http://oauth.net
+	
+	Mojolicious::Plugin::OAuth on http://github.com/likhatskiy/Mojolicious-Plugin-OAuth
+	
 LICENSE AND COPYRIGHT
 
 Copyright (C) 2010 Alexey Likhatskiy
