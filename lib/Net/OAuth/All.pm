@@ -1,12 +1,11 @@
 package Net::OAuth::All;
 use warnings;
 use strict;
-use Carp;
+use Carp 'croak';
 use Encode;
 use URI;
 use URI::Escape;
 use Net::OAuth::All::Config;
-use Data::Dumper;
 
 our $VERSION = '0.5';
 
@@ -28,7 +27,7 @@ sub new {
 		smart_require('Crypt::OpenSSL::RSA', 1);
 		smart_require('File::Slurp',         1);
 		
-		my $key = read_file($args{'signature_key_file'});
+		my $key = File::Slurp::read_file($args{'signature_key_file'});
 		$args{'signature_key'} = Crypt::OpenSSL::RSA->new_private_key( $key );
 	}
 	
