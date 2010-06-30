@@ -38,7 +38,11 @@ sub version_autodetect {
 	my $args = shift;
 	
 	return $args->{'module_version'} if $args->{'module_version'};
-	return '1.0' unless grep {!$args->{$_}} qw/consumer_key consumer_secret/;
+	
+	unless ( grep {!$args->{$_}} qw/consumer_key consumer_secret/ ) {
+		return $args->{'verifier'} ? '1.0A' : '1.0';
+	}
+	
 	return '2.0' unless grep {!$args->{$_}} qw/client_id client_secret/;
 }
 
