@@ -57,14 +57,14 @@ use constant CONFIG => {
 		},
 		'web_server' => {
 			'access_token'       => {
-				'required_params'  => [qw/type client_id client_secret code redirect_uri/],
-				'api_params'       => [qw/type client_id client_secret code redirect_uri/],
-				'optional_params'  => [qw/format/],
+				'required_params'  => [qw/type client_id code/],
+				'api_params'       => [qw/type client_id code/],
+				'optional_params'  => [qw/format client_secret redirect_uri/],
 			},
 			'authorization'      => {
-				'required_params'  => [qw/type client_id redirect_uri/],
-				'api_params'       => [qw/type client_id redirect_uri/],
-				'optional_params'  => [qw/state scope immediate/],
+				'required_params'  => [qw/type client_id/],
+				'api_params'       => [qw/type client_id/],
+				'optional_params'  => [qw/state scope immediate redirect_uri/],
 			},
 		},
 	},

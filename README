@@ -8,37 +8,121 @@ SYNOPSIS
 	use HTTP::Request::Common;
 	
 	my $ua = LWP::UserAgent->new;
+	my $res;
+	my $conf;
+	my $oauth;
 	
-	my $www_oauth = Net::OAuth::All->new(
-		consumer_key      => 'gjnj3n8848hkdsdksknskjnu48',
-		consumer_secret   => 'gjnj3n8848hkdsdksknskjnu48ffgdsknfjkndngjbu43h',
+	# OAuth 1.0 and 1.0A
+	$conf = {
+		consumer_key      => 'enter your own',
+		consumer_secret   => 'enter your own',
 		signature_method  => 'HMAC-SHA1',
 		
-		request_token_url => 'https://provider.com/account/oauth/request_token',
-		authorization_url => 'https://provider.com/account/oauth/authorize',
-		access_token_url  => 'https://provider.com/account/oauth/access_token',
-		
-		protected_resource_url => 'http://provider-api.com/v2/feed/me',
-	);
+		request_token_url => 'https://provider.com/request_token', # enter your own
+		authorization_url => 'https://provider.com/authorize', # enter your own
+		access_token_url  => 'https://provider.com/access_token', # enter your own
+	};
+	$oauth = Net::OAuth::All->new(%$conf);
 	
-	# Consumer Get request token of OAuth 1.0 or 1.0A
+	# Consumer Get request token
 	
-	my $res = $ua->request(GET $www_oauth->request('request_token')->to_url);
+	$res = $ua->get($oauth->request('request_token')->to_url);
+	
+	my $request_token;
+	my $request_token_secret;
 	if ($res->is_success) {
-		$www_oauth->response->from_post_body($res->content);
+		$oauth->response->from_post_body($res->content);
 		
-		print "Got Request Token ", $www_oauth->token, "\n";
-		print "Got Request Token Secret ", $www_oauth->token_secret, "\n";
+		$request_token        = $oauth->token;
+		$request_token_secret = $oauth->token_secret;
 	} else {
 		die "Something went wrong";
 	}
 	
 	# Consumer Get authorization URL for redirect to provider
 	
-	$www_oauth->request('authorization')->to_url
+	$oauth->request('authorization')->to_url;
+	
+	# Consumer Get access token
+	
+	my $oauth_verifier = 'from provider'; #from GET params after callback
+	
+	$oauth = Net::OAuth::All->new(
+		%$conf,
+		(
+			'token'        => $request_token,
+			'token_secret' => $request_token_secret,
+			'verifier'     => $oauth_verifier, # for OAuth 1.0A
+		)
+	);
+	
+	$res = $ua->post(
+		$oauth->via('POST')->request('access_token')->url,
+		'Content-Type'  => 'application/x-www-form-urlencoded',
+		'Authorization' => $oauth->to_header,
+	);
+	
+	my $access_token;
+	my $access_token_secret;
+	if ($res->is_success) {
+		$oauth->response->from_post_body($res->content);
+		
+		$access_token        = $oauth->token;
+		$access_token_secret = $oauth->token_secret;
+	} else {
+		die "Something went wrong";
+	}
+	
+	# Make protected request to API
+	
+	$oauth = Net::OAuth::All->new(
+		%$conf,
+		(
+			'token'        => $access_token,
+			'token_secret' => $access_token_secret,
+		)
+	);
+	
+	$oauth
+		->via('POST')
+		->protected_resource_url('http://provider-api.com/v2/feed/me')
+		->clean_extra
+		->put_extra(
+			'alt' => 'json'
+		)
+		->request('protected_resource');
+	
+	$res = $ua->post(
+		$oauth->url,
+		
+		'Content-Type'  => 'application/x-www-form-urlencoded',
+		'Authorization' => $oauth->to_header,
+		
+		'Content' => $oauth->to_post_body,
+	);
+	
+	# if you need to post JSON, for example Google Buzz update activity
+	
+	# at this moment we change request method to POST and put extra params
+	# but we need to change URL
+	# after change data we SHOULD signing
+	
+	$oauth
+		->protected_resource_url('https://www.googleapis.com/buzz/v1/activities/@me/@self')
+		->sign;
+	
+	$res = $ua->post(
+		$oauth->to_url(1),# put extra params to URL
+		
+		'Content-Type'  => 'application/json',
+		'Authorization' => $oauth->to_header,
+		
+		'Content' => q({"data": {"object": {"type": "note", "content": "I`m in Google BUZZ"}}}),
+	);
+	
 	
 DESCRIPTION
-	At this moment module suppoted Consumer implementation of OAuth 1.0, 1.0A and 2.0 version.
+	At this moment module suppoted Consumer implementation of OAuth 1.0, 1.0A and 2.0 versions.
 	
 	CONFIGURATION
 	
@@ -53,11 +137,8 @@ DESCRIPTION
 		- signature_key_file
 			Is required param for RSA-SHA1 signatures. Is path to *.pem file
 		
-		- callback
-			Is optional param. 
-		
 		- extra_params
-			Is optional param, but may be required by provider.
+			Is optional HASH reference param, but may be required by provider.
 			
 		- request_token_url
 			Is required param. URL for get request token
@@ -67,9 +148,6 @@ DESCRIPTION
 			
 		- access_token_url
 			Is required param. URL for get access token
-			
-		- protected_resource_url
-			Is required param. URL for get user profile
 		
 		
 		FOR OAUTH 1.0 and 1.0A
@@ -80,11 +158,13 @@ DESCRIPTION
 			- consumer_secret
 				Is required param. Is issued by provider
 			
+			- callback
+				Is optional param. 
 		
 		FOR OAUTH 2.0
 		
 			- type
-				Is required param. Is issued by provider. At this moment module has implementation of web_server type only.
+				Is required param. Is issued by provider. At this moment module has implementation of 'web_server' type only.
 			
 			- client_id
 				Is required param. Is issued by provider
@@ -92,8 +172,8 @@ DESCRIPTION
 			- client_secret
 				Is required param. Is issued by provider
 			
-			- api_key
-				Is required param. Is issued by provider
+			- redirect_uri
+				Is optional param. 
 			
 			
 		PARAMS FROM PROVIDER
@@ -125,11 +205,51 @@ DESCRIPTION
 		
 		To use RSA-SHA1 signatures, pass -signature_key_file param to configuration.
 	
-	REQUESTS
-		
-	RESPONSE
+	METHODS
 	
-	METHOD
+	new(%config)
+		
+		Creates Net::OAuth::All object with provider configuration.
+	
+	version
+		
+		Returns current oauth version.
+	
+	version_autodetect
+		
+		Detect OAuth version from config params.
+	
+	request('request type', %params)
+		
+		Configure current created object for 'request type' request and check required params for request. %params is provider config.
+		'request type' can be 'request_token', 'authorization', 'access_token' or 'protected_resource'.
+	
+	response
+		
+		Clean object after request (clean 'token' and 'token_secret').
+	
+	from_hash
+	params
+	to_header
+	to_url
+	to_hash
+	to_post_body
+	from_post_body
+	sign
+	put_extra
+	extra
+	clean_extra
+	token
+	token_secret
+	expires
+	scope
+	refresh_token
+	url
+	signature
+	via
+	request_type
+	protected_resource_url
+	
 
 SEE ALSO
 	http://oauth.net

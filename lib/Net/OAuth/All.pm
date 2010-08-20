@@ -1,4 +1,5 @@
 package Net::OAuth::All;
+
 use warnings;
 use strict;
 use Carp 'croak';
@@ -7,7 +8,7 @@ use URI;
 use URI::Escape;
 use Net::OAuth::All::Config;
 
-our $VERSION = '0.5';
+our $VERSION = '0.7';
 
 use constant OAUTH_PREFIX => 'oauth_';
 
@@ -19,7 +20,7 @@ sub new {
 	$args{'request_method'      } ||= 'GET';
 	($args{'module_version'} = version_autodetect(\%args)) =~ s/\./\_/;
 	$args{'__BASE_CONFIG'  }   = Net::OAuth::All::Config::CONFIG->{$args{'module_version'}} || {};
-	croak 'Your Net::OAuth::All::Config is empty. Check "module_version" config!' unless %{ $args{'__BASE_CONFIG'} };
+	croak 'Your Net::OAuth::All::Config is empty. Check params or insert "module_version" config!' unless %{ $args{'__BASE_CONFIG'} };
 	
 	if ($args{'signature_method'} && $args{'signature_method'} eq 'RSA-SHA1') {
 		croak "Param 'signature_key_file' is null or file doesn`t exists" unless $args{'signature_key_file'} && -f $args{'signature_key_file'};
@@ -34,6 +35,8 @@ sub new {
 	bless \%args => $class;
 }
 
+sub version { shift->{'module_version'} }
+
 sub version_autodetect {
 	my $args = shift;
 	
@@ -43,7 +46,7 @@ sub version_autodetect {
 		return $args->{'verifier'} ? '1.0A' : '1.0';
 	}
 	
-	return '2.0' unless grep {!$args->{$_}} qw/client_id client_secret/;
+	return '2.0' unless grep {!$args->{$_}} qw/client_id type/;
 }
 
 sub request {
@@ -52,7 +55,7 @@ sub request {
 	croak "Request $request_type not suppoted!" unless %{ $self->base_requestconfig($request_type) };
 	
 	$self->{'current_request_type'}  = $request_type;
-	$self->{$_} = $args{$_} for keys %args;
+	$self->from_hash(%args) if %args;
 	
 	$self->check;
 	$self->preload;
@@ -75,10 +78,6 @@ sub preload {
 sub check {
 	my $self = shift;
 	croak "Missing required parameter '$_'" for grep {not defined $self->{$_}} $self->required_params;
-	
-	#~ if ($self->{'extra_params'} && $self->allow_extra_params) {
-		#~ croak "Parameter '$_' not allowed in arbitrary params" for grep {$_=~ $OAUTH_PREFIX_RE} keys %{$self->{extra_params}};
-	#~ }
 }
 
 sub base_requestconfig {
@@ -94,26 +93,28 @@ sub base_requestconfig {
 	) || {};
 }
 
-sub allow_extra_params {1}
-
-sub gather_message_parameters {
+sub params {
 	my ($self, %opts) = @_;
 	
-	$opts{'quote'}   = "" unless defined $opts{'quote'};
-	$opts{'add'  } ||= [];
+	$opts{'quote' } = "" unless defined $opts{'quote'};
+	$opts{'delete'} = {map {$_ => 1} @{ $opts{'delete'}  || []}};
 	
 	my %params = ();
-	if ($self->{'module_version'} eq '2_0') {
-		%params = map {$_ => $self->{$_}}
-			$self->api_params, grep {$self->{$_}} $self->optional_params, , @{$opts{add}};
-	} else {
-		%params = 
-			map  {OAUTH_PREFIX.$_ => $self->{$_}}
-			grep {( $_ eq 'signature' && (!$self->sign_message || !grep ( $_ eq 'signature', @{$opts{add}} )) ) ? 0 : 1}
-			$self->api_params, grep {$self->{$_}} $self->optional_params, , @{$opts{add}};
-		if ($self->{'extra_params'} && !$opts{'no_extra'} && $self->allow_extra_params) {
-			$params{$_} = $self->{'extra_params'}{$_} for keys %{$self->{'extra_params'}};
+	unless ($opts{'extra'}) {
+		if ($self->{'module_version'} eq '2_0') {
+			%params = map {$_ => $self->{$_}}
+				$self->api_params, grep {$self->{$_}} $self->optional_params, @{$opts{add}};
+		} else {
+			%params = 
+				map  {OAUTH_PREFIX.$_ => $self->{$_}}
+				grep {!$opts{'delete'}->{$_}}
+				$self->api_params, grep {$self->{$_}} $self->optional_params;
+			
 		}
+	}
+	my $extra = $self->extra;
+	if ($extra && !$opts{'no_extra'}) {
+		$params{$_} = $extra->{$_} for keys %$extra;
 	}
 	
 	return \%params if $opts{'hash'};
@@ -121,43 +122,45 @@ sub gather_message_parameters {
 	return sort map {join '=', escape($_), $opts{'quote'} . escape($params{$_}) . $opts{'quote'}} keys %params;
 }
 
-sub to_authorization_header {
+sub to_header {
 	my ($self, $realm, $sep) = @_;
 	$sep  ||= ",";
 	$realm  = defined $realm ? "realm=\"$realm\"$sep" : "";
 	
 	return "OAuth $realm" .
-		join($sep, $self->gather_message_parameters(quote => '"', add => [qw/signature/], no_extra => 1));
+		join($sep, $self->params(quote => '"', no_extra => 1)) if $self->version ne '2_0';
+	
+	return "OAuth $self->{'access_token'}";
 }
 
 sub to_url {
-	my ($self, $url) = @_;
-	if (!defined $url and $self->can('request_url') and defined $self->request_url) {
-		$url = $self->request_url;
-	}
+	my $self  = shift;
+	my $extra = shift;
+	
+	my $url = $self->url;
+	
 	if (defined $url) {
 		_ensure_uri_object($url);
 		$url = $url->clone; # don't modify the URL that was passed in
-		$url->query(undef); # remove any existing query params, as these may cause the signature to break	
-		my $params = $self->to_hash;
-		return $url . '?' . join '&', map {escape($_) . '=' . escape( $params->{$_} )} sort keys %$params;
+		$url->query(undef); # remove any existing query params, as these may cause the signature to break
+		my $p_str = join '&' => $self->params(extra => $extra);
+		return $url . ($p_str ? '?'.$p_str : '');
 	} else {
 		croak "Can`t load $self->{'current_request_type'} request URL";
 	}
 }
 
 sub from_hash {
-	my ($self, $hash) = @_;
-	croak 'Expected a hash!' if ref $hash ne 'HASH';
+	my ($self, %hash) = @_;
 	
 	if ($self->{'module_version'} eq '2_0') {
-		$self->{$_} = $hash->{$_} for keys %$hash;
+		$self->{$_} = $hash{$_} for keys %hash;
 	} else {
-		foreach my $k (keys %$hash) {
+		foreach my $k (keys %hash) {
 			if ($k =~ s/$OAUTH_PREFIX_RE//) {
-				$self->{$k} = $hash->{OAUTH_PREFIX . $k};
+				$self->{$k} = $hash{OAUTH_PREFIX . $k};
 			} else {
-				$self->{'extra_params'}->{$k} = $hash->{$k};
+				$self->{$k} = $hash{$k};
 			}
 		}
 	}
@@ -165,13 +168,23 @@ sub from_hash {
 	return $self;
 }
 
-sub to_hash      { shift->gather_message_parameters(hash => 1, add => [qw/signature/]) }
-sub to_post_body { join '&', shift->gather_message_parameters(add => [qw/signature/])  }
+sub to_hash      { shift->params(hash => 1) }
+
+sub to_post_body {
+	my $self = shift;
+	return '' if $self->via eq 'GET';
+	
+	my $extra;
+	$extra = 1 if $self->version ne '2_0';
+	
+	join '&', $self->params(extra => $extra);
+	#~ '';
+}
 
 sub from_post_body {
 	my ($self, $post_body) = @_;
 	croak "Provider sent error message '$post_body'" if $post_body =~ /\s/;
-	return $self->from_hash({map {unescape($_)} grep {s/(^"|"$)//g;1;} map {split '=', $_, 2} split '&', $post_body});
+	return $self->from_hash(map {unescape($_)} grep {s/(^"|"$)//g;1;} map {split '=', $_, 2} split '&', $post_body);
 }
 
 #sign
@@ -179,6 +192,7 @@ sub sign {
 	my $self = shift;
 	my $class = $self->_signature_method_class;
 	$self->signature($class->sign($self, @_));
+	return $self;
 }
 
 sub _signature_method_class {
@@ -205,17 +219,17 @@ sub _ensure_uri_object { $_[0] = UNIVERSAL::isa($_[0], 'URI') ? $_[0] : URI->new
 
 sub normalized_request_url {
 	my $self = shift;
-	my $url = $self->request_url;
+	my $url = $self->url;
 	_ensure_uri_object($url);
 	$url = $url->clone;
 	$url->query(undef);
 	return $url;
 }
 
-sub normalized_message_parameters { join '&',  shift->gather_message_parameters }
+sub normalized_message_parameters { join '&',  shift->params('delete' => ['signature']) }
 sub signature_base_string {
 	my $self = shift;
-	return join '&', map {escape($self->$_)} qw/request_method normalized_request_url normalized_message_parameters/;
+	return join '&', map {escape($self->$_)} qw/via normalized_request_url normalized_message_parameters/;
 }
 
 #----------------
@@ -237,6 +251,20 @@ sub required_params { @{ shift->base_requestconfig->{'required_params'} || {}} }
 sub api_params      { @{ shift->base_requestconfig->{'api_params'     } || {}} }
 sub optional_params { @{ shift->base_requestconfig->{'optional_params'} || {}} }
 
+sub put_extra {
+	my $self = shift;
+	my %p    = @_;
+	
+	$self->{'extra_params'}->{$_} = $p{$_} for keys %p;
+	return $self;
+}
+sub extra {shift->{'extra_params'} || {} }
+sub clean_extra {
+	my $self = shift;
+	$self->{'extra_params'} = {};
+	return $self;
+}
+
 #take params
 sub token {
 	for (+shift) {
@@ -248,29 +276,40 @@ sub token_secret  { shift->{'token_secret' }       }
 sub expires       { shift->{'expires'      } || 0  }
 sub scope         { shift->{'scope'        } || '' }
 sub refresh_token { shift->{'refresh_token'} || '' }
-sub request_url   {
+sub url   {
 	my $self = shift;
 	$self->{$self->{'current_request_type'}."_url"};
 }
 sub signature {
 	my ($self, $value) = @_;
-	$self->{'signature'} = $value if defined $value;
+	$self->{'signature'} = $value and return $self if defined $value;
 	
 	return $self->{'signature'};
 }
 
 sub signature_method {
 	my ($self, $value) = @_;
-	$self->{'signature_method'} = $value if defined $value;
+	$self->{'signature_method'} = $value and return $self if defined $value;
 	
 	return $self->{'signature_method'} || '';
 }
 
-sub request_method {
+sub via {
 	my ($self, $value) = @_;
-	$self->{'request_method'} = $value if defined $value;
+	$self->{'request_method'} = $value and return $self if defined $value;
 	
 	return $self->{'request_method'};
+}
+
+sub request_type {
+	shift->{'current_request_type'};
+}
+
+sub protected_resource_url {
+	my ($self, $value) = @_;
+	$self->{'protected_resource_url'} = $value and return $self if defined $value;
+	
+	return $self->{'protected_resource_url'};
 }
 
 #extra subs
