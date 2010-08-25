@@ -18,6 +18,7 @@ sub new {
 	my ($class, %args) = @_;
 	$args{'current_request_type'}   = '';
 	$args{'request_method'      } ||= 'GET';
+	$args{'signature_method'    } ||= 'HMAC-SHA1';
 	($args{'module_version'} = version_autodetect(\%args)) =~ s/\./\_/;
 	$args{'__BASE_CONFIG'  }   = Net::OAuth::All::Config::CONFIG->{$args{'module_version'}} || {};
 	croak 'Your Net::OAuth::All::Config is empty. Check params or insert "module_version" config!' unless %{ $args{'__BASE_CONFIG'} };

@@ -132,7 +132,7 @@ DESCRIPTION
 			Is optional param. Is OAuth version, may be '1.0','1.0A' or '2.0'. Module has auto detection of this param according to service provider params.
 		
 		- signature_method
-			Is required param. Suppoted PLAINTEXT, HMAC-SHA1 and RSA-SHA1.
+			Is optional param, HMAC-SHA1 by default. Suppoted PLAINTEXT, HMAC-SHA1 and RSA-SHA1.
 		
 		- signature_key_file
 			Is required param for RSA-SHA1 signatures. Is path to *.pem file
@@ -170,7 +170,7 @@ DESCRIPTION
 				Is required param. Is issued by provider
 			
 			- client_secret
-				Is required param. Is issued by provider
+				Is optional param. Is issued by provider
 			
 			- redirect_uri
 				Is optional param. 
@@ -228,28 +228,72 @@ DESCRIPTION
 		
 		Clean object after request (clean 'token' and 'token_secret').
 	
-	from_hash
-	params
-	to_header
-	to_url
+	from_hash(%HASH)
+		Set config params from HASH.
+		
+	to_header('realm', 'sep')
+		Generate header OAuth according to OAuth version. 'sep' is a separator, ',' by default.
+		
+		EXAMPLE
+			1.0 or 1.0A
+			'OAuth realm="$realm",oauth_token=...,...,...'
+			2.0
+			'OAuth access_token here'
+		
+	to_url($extra)
+		Generate URL with query params. Includes only extra params if $extra is TRUE.
+		
 	to_hash
+		Returns all saved params and config params as a HASH reference.
+		
 	to_post_body
-	from_post_body
+		Generates a body for POST request. Returns '' if current METHOD is GET. Returns only extra params if OAuth version is not 2.0.
+		
+	from_post_body('BODY')
+		Parse POST body
+		
 	sign
-	put_extra
-	extra
-	clean_extra
-	token
-	token_secret
-	expires
-	scope
-	refresh_token
-	url
+		Signing request.
+		
 	signature
-	via
+		Returns current signature.
+		
+	url
+		Returns current URL according to request_type.
+		
+	via('METHOD')
+		Set HTTP METHOD.
+		
 	request_type
-	protected_resource_url
+		Returns current type of request which was set by request method.
+		
+	protected_resource_url('URL')
+		Set protected resource url.
 	
+	extra
+		Returns current extra params as a HASH reference.
+		
+	put_extra(%HASH)
+		Set extra params for request.
+		
+	clean_extra
+		Clean extra params which was set before.
+		
+	token
+		Returns 'oauth_token' or 'access_token' (for OAuth 2.0) param.
+		
+	token_secret
+		Returns 'oauth_token_secret' param.
+		
+	expires
+		Returns 'expires' param. It`s for OAuth 2.0
+		
+	scope
+		Returns 'scope' param. It`s for OAuth 2.0
+		
+	refresh_token
+		Returns 'refresh_token' param. It`s for OAuth 2.0
+		
 
 SEE ALSO
 	http://oauth.net
